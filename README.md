@@ -7,5 +7,4 @@
 
 * Azmi Novi Athaya
 * Syawal Rizal Utama
-* Ezzy Auriel Syach Lie
 * Mhd Febri Yansah
