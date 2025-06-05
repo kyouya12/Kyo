@@ -24,14 +24,15 @@ GRAY = (120, 120, 120)  # Road color
 MAP_LOADED = False
 MAP_SURFACE = None
 MAP_ARRAY = None
-COURIER_POS = (0, 0)
+ROAD_CENTER_MAP = None  # Untuk menyimpan road center info
+COURIER_POS = (0.0, 0.0)  # Float untuk gerakan halus
 SOURCE_POS = (0, 0)
 DEST_POS = (0, 0)
 COURIER_DIRECTION = 0  # 0: right, 1: down, 2: left, 3: up
 HAS_PACKAGE = False
 PATH = []
 CURRENT_PATH_INDEX = 0
-MOVEMENT_SPEED = 5  # pixels per frame
+MOVEMENT_SPEED = 2.5  # Speed untuk gerakan halus
 RUNNING = False
 FINISHED = False
 
@@ -76,6 +77,33 @@ load_map_button_rect = pygame.Rect(20, button_y, button_width, button_height)
 randomize_button_rect = pygame.Rect(20 + button_width + button_spacing, button_y, button_width, button_height)
 start_button_rect = pygame.Rect(20 + (button_width + button_spacing) * 2, button_y, button_width, button_height)
 reset_button_rect = pygame.Rect(20 + (button_width + button_spacing) * 3, button_y, button_width, button_height)
+
+def calculate_road_centers():
+    """Calculate road center positions using simple distance calculation"""
+    global ROAD_CENTER_MAP
+    
+    if not MAP_LOADED:
+        return
+    
+    height, width = MAP_ARRAY.shape
+    ROAD_CENTER_MAP = np.zeros((height, width), dtype=float)
+    
+    # For each road pixel, calculate distance to nearest non-road pixel
+    for y in range(height):
+        for x in range(width):
+            if MAP_ARRAY[y][x]:  # If it's a road pixel
+                min_dist = float('inf')
+                
+                # Check in a reasonable radius
+                for dy in range(-20, 21):
+                    for dx in range(-20, 21):
+                        nx, ny = x + dx, y + dy
+                        if (0 <= nx < width and 0 <= ny < height):
+                            if not MAP_ARRAY[ny][nx]:  # Non-road pixel
+                                dist = (dx*dx + dy*dy) ** 0.5
+                                min_dist = min(min_dist, dist)
+                
+                ROAD_CENTER_MAP[y][x] = min_dist if min_dist != float('inf') else 0
 
 def load_map():
     """Load map image and process it to identify roads"""
@@ -123,6 +151,11 @@ def load_map():
                     road_array[y][x] = True
         
         MAP_ARRAY = road_array
+        
+        # Calculate road centers
+        print("Calculating road centers...")
+        calculate_road_centers()
+        
         MAP_LOADED = True
         
         # Reset positions and path
@@ -135,6 +168,18 @@ def load_map():
         
     except Exception as e:
         print(f"Error loading map: {e}")
+
+def find_best_road_position(positions, min_center_distance=3):
+    """Find positions that are closer to road centers"""
+    if not MAP_LOADED or ROAD_CENTER_MAP is None:
+        return positions
+    
+    best_positions = []
+    for x, y in positions:
+        if ROAD_CENTER_MAP[y][x] >= min_center_distance:
+            best_positions.append((x, y))
+    
+    return best_positions if best_positions else positions
 
 def randomize_positions():
     """Randomize courier, source, and destination positions on valid road tiles"""
@@ -150,18 +195,20 @@ def randomize_positions():
         print("Not enough road positions found")
         return
     
+    # Convert to (x, y) format and find center positions
+    road_positions = [(x, y) for y, x in road_positions]
+    center_positions = find_best_road_position(road_positions)
+    
+    # Use center positions if available, otherwise fallback to all road positions
+    positions_to_use = center_positions if len(center_positions) >= 3 else road_positions
+    
     # Shuffle positions
-    np.random.shuffle(road_positions)
+    random.shuffle(positions_to_use)
     
     # Select positions for courier, source, and destination
-    y, x = road_positions[0]
-    COURIER_POS = (x, y)
-    
-    y, x = road_positions[1]
-    SOURCE_POS = (x, y)
-    
-    y, x = road_positions[2]
-    DEST_POS = (x, y)
+    COURIER_POS = (float(positions_to_use[0][0]), float(positions_to_use[0][1]))
+    SOURCE_POS = positions_to_use[1]
+    DEST_POS = positions_to_use[2]
     
     # Random courier direction
     COURIER_DIRECTION = random.randint(0, 3)
@@ -199,6 +246,8 @@ def calculate_path():
     """Calculate the path from courier to source and then to destination"""
     global PATH, CURRENT_PATH_INDEX, HAS_PACKAGE
     
+    start_pos = (int(COURIER_POS[0]), int(COURIER_POS[1]))
+    
     if not HAS_PACKAGE:
         # First path: courier to source
         target = SOURCE_POS
@@ -206,7 +255,7 @@ def calculate_path():
         # Second path: source to destination
         target = DEST_POS
     
-    PATH = find_path(COURIER_POS, target)
+    PATH = find_path(start_pos, target)
     CURRENT_PATH_INDEX = 0
     
     if not PATH:
@@ -214,17 +263,16 @@ def calculate_path():
         RUNNING = False
 
 def find_path(start, end):
-    """A* pathfinding algorithm to find a path from start to end"""
+    """A* pathfinding algorithm with road center preference"""
     if not MAP_LOADED or not MAP_ARRAY[end[1]][end[0]] or not MAP_ARRAY[start[1]][start[0]]:
         return []
     
     # A* algorithm
-    open_set = [(0, start)]  # Priority queue: (f_score, position)
+    open_set = [(0, start)]
     came_from = {}
     g_score = {start: 0}
     f_score = {start: heuristic(start, end)}
     
-    # For open_set lookup
     open_set_hash = {start}
     
     while open_set:
@@ -237,23 +285,32 @@ def find_path(start, end):
             while current in came_from:
                 path.append(current)
                 current = came_from[current]
-            path.append(current)  # Add start position
+            path.append(current)
             path.reverse()
-            return path
+            
+            # Smooth the path
+            return smooth_path(path)
         
-        # Check all neighbors (4-way movement)
-        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+        # Check neighbors (8-way movement)
+        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (-1, -1), (1, -1), (-1, 1)]:
             x, y = current[0] + dx, current[1] + dy
             
-            # Check if within bounds and is road
             if (0 <= x < MAP_ARRAY.shape[1] and 0 <= y < MAP_ARRAY.shape[0] and 
                 MAP_ARRAY[y][x]):
                 
                 neighbor = (x, y)
-                tentative_g = g_score[current] + 1
+                
+                # Movement cost (diagonal costs more)
+                move_cost = 1.4 if abs(dx) + abs(dy) == 2 else 1.0
+                
+                # Road center preference (if available)
+                road_bonus = 0
+                if ROAD_CENTER_MAP is not None:
+                    road_bonus = ROAD_CENTER_MAP[y][x] * 0.1
+                
+                tentative_g = g_score[current] + move_cost - road_bonus
                 
                 if neighbor not in g_score or tentative_g < g_score[neighbor]:
-                    # This path is better
                     came_from[neighbor] = current
                     g_score[neighbor] = tentative_g
                     f_score[neighbor] = tentative_g + heuristic(neighbor, end)
@@ -262,12 +319,57 @@ def find_path(start, end):
                         heapq.heappush(open_set, (f_score[neighbor], neighbor))
                         open_set_hash.add(neighbor)
     
-    # No path found
     return []
 
+def smooth_path(path):
+    """Smooth path to reduce zigzag movement"""
+    if len(path) <= 2:
+        return path
+    
+    smoothed = [path[0]]
+    i = 0
+    
+    while i < len(path) - 1:
+        current = path[i]
+        
+        # Look ahead for straight line opportunities
+        farthest = i + 1
+        for j in range(i + 2, min(i + 8, len(path))):
+            if can_move_straight(current, path[j]):
+                farthest = j
+            else:
+                break
+        
+        if farthest > i + 1:
+            smoothed.append(path[farthest])
+            i = farthest
+        else:
+            smoothed.append(path[i + 1])
+            i += 1
+    
+    return smoothed
+
+def can_move_straight(start, end):
+    """Check if we can move straight between two points"""
+    x1, y1 = start
+    x2, y2 = end
+    
+    steps = max(abs(x2 - x1), abs(y2 - y1))
+    if steps == 0:
+        return True
+    
+    for i in range(steps + 1):
+        x = int(x1 + (x2 - x1) * i / steps)
+        y = int(y1 + (y2 - y1) * i / steps)
+        
+        if not (0 <= x < MAP_ARRAY.shape[1] and 0 <= y < MAP_ARRAY.shape[0] and MAP_ARRAY[y][x]):
+            return False
+    
+    return True
+
 def heuristic(a, b):
-    """Manhattan distance heuristic"""
-    return abs(a[0] - b[0]) + abs(a[1] - b[0])
+    """Euclidean distance heuristic"""
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
 
 def update_courier():
     """Update courier position along the path"""
@@ -279,57 +381,56 @@ def update_courier():
     # Target position from path
     target_pos = PATH[CURRENT_PATH_INDEX]
     
-    # Determine direction to target
-    dx = target_pos[0] - COURIER_POS[0]
-    dy = target_pos[1] - COURIER_POS[1]
-    
-    # Update courier direction based on movement
-    if dx > 0:
-        new_direction = 0  # Right
-    elif dx < 0:
-        new_direction = 2  # Left
-    elif dy > 0:
-        new_direction = 1  # Down
-    elif dy < 0:
-        new_direction = 3  # Up
-    else:
-        new_direction = COURIER_DIRECTION  # No change if at target
-    
-    # Smooth rotation to new direction
-    if new_direction != COURIER_DIRECTION:
-        COURIER_DIRECTION = new_direction
-    
-    # Move towards target position
+    # Current position
     cx, cy = COURIER_POS
     tx, ty = target_pos
     
-    # Calculate move vector
-    move_x = min(MOVEMENT_SPEED, abs(tx - cx)) * (1 if tx > cx else -1 if tx < cx else 0)
-    move_y = min(MOVEMENT_SPEED, abs(ty - cy)) * (1 if ty > cy else -1 if ty < cy else 0)
+    # Calculate direction and distance
+    dx = tx - cx
+    dy = ty - cy
+    distance = (dx ** 2 + dy ** 2) ** 0.5
     
-    # Update position
-    new_x = cx + move_x
-    new_y = cy + move_y
-    COURIER_POS = (new_x, new_y)
-    
-    # Check if reached target position
-    if abs(new_x - tx) < MOVEMENT_SPEED and abs(new_y - ty) < MOVEMENT_SPEED:
-        COURIER_POS = target_pos  # Snap to grid
+    if distance < MOVEMENT_SPEED:
+        # Reached waypoint, move to next
+        COURIER_POS = (float(tx), float(ty))
         CURRENT_PATH_INDEX += 1
         
-        # Check if reached final destination
+        # Check if completed path
         if CURRENT_PATH_INDEX >= len(PATH):
-            # If at source and don't have package, pick it up
-            if not HAS_PACKAGE and COURIER_POS == SOURCE_POS:
-                HAS_PACKAGE = True
-                # Calculate new path to destination
-                PATH = find_path(SOURCE_POS, DEST_POS)
-                CURRENT_PATH_INDEX = 0
-            # If at destination and have package, delivery complete
-            elif HAS_PACKAGE and COURIER_POS == DEST_POS:
-                RUNNING = False
-                FINISHED = True
-                print("Delivery complete!")
+            courier_x, courier_y = int(COURIER_POS[0]), int(COURIER_POS[1])
+            
+            if not HAS_PACKAGE:
+                # Check if at source
+                if (abs(courier_x - SOURCE_POS[0]) < 10 and 
+                    abs(courier_y - SOURCE_POS[1]) < 10):
+                    HAS_PACKAGE = True
+                    # Calculate path to destination
+                    PATH = find_path((courier_x, courier_y), DEST_POS)
+                    CURRENT_PATH_INDEX = 0
+                    if not PATH:
+                        RUNNING = False
+                        print("No path to destination!")
+            else:
+                # Check if at destination
+                if (abs(courier_x - DEST_POS[0]) < 10 and 
+                    abs(courier_y - DEST_POS[1]) < 10):
+                    RUNNING = False
+                    FINISHED = True
+                    print("Delivery complete!")
+    else:
+        # Move towards target
+        dx /= distance
+        dy /= distance
+        
+        new_x = cx + dx * MOVEMENT_SPEED
+        new_y = cy + dy * MOVEMENT_SPEED
+        COURIER_POS = (new_x, new_y)
+        
+        # Update direction
+        if abs(dx) > abs(dy):
+            COURIER_DIRECTION = 0 if dx > 0 else 2
+        else:
+            COURIER_DIRECTION = 1 if dy > 0 else 3
 
 def draw_ui():
     """Draw UI elements"""
@@ -371,12 +472,12 @@ def draw_game():
     # Draw map
     screen.blit(MAP_SURFACE, (0, 80))
     
-    # Draw path
-    if PATH:
+    # Draw path with thicker line
+    if PATH and len(PATH) > 1:
         for i in range(len(PATH) - 1):
             pygame.draw.line(screen, BLUE, 
                             (PATH[i][0], PATH[i][1] + 80), 
-                            (PATH[i+1][0], PATH[i+1][1] + 80), 2)
+                            (PATH[i+1][0], PATH[i+1][1] + 80), 4)
     
     # Draw source and destination
     screen.blit(YELLOW_FLAG, (SOURCE_POS[0] - 10, SOURCE_POS[1] - 10 + 80))
@@ -384,7 +485,7 @@ def draw_game():
     
     # Draw courier
     courier_img = COURIER_IMGS[COURIER_DIRECTION]
-    screen.blit(courier_img, (COURIER_POS[0] - 10, COURIER_POS[1] - 10 + 80))
+    screen.blit(courier_img, (int(COURIER_POS[0]) - 10, int(COURIER_POS[1]) - 10 + 80))
     
     # Draw package indicator
     if HAS_PACKAGE:
@@ -393,8 +494,6 @@ def draw_game():
 
 def main():
     """Main game loop"""
-    global RUNNING
-    
     clock = pygame.time.Clock()
     
     while True:
