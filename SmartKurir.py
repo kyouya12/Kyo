@@ -25,14 +25,14 @@ MAP_LOADED = False
 MAP_SURFACE = None
 MAP_ARRAY = None
 ROAD_CENTER_MAP = None  # Untuk menyimpan road center info
-COURIER_POS = (0.0, 0.0)  # Float untuk gerakan halus
+COURIER_POS = (0.0, 0.0)  # Float gerakan halus
 SOURCE_POS = (0, 0)
 DEST_POS = (0, 0)
 COURIER_DIRECTION = 0  # 0: right, 1: down, 2: left, 3: up
 HAS_PACKAGE = False
 PATH = []
 CURRENT_PATH_INDEX = 0
-MOVEMENT_SPEED = 2.5  # Speed untuk gerakan halus
+MOVEMENT_SPEED = 2.5  # Speed gerakan halus
 RUNNING = False
 FINISHED = False
 
@@ -512,7 +512,7 @@ def main():
                 elif reset_button_rect.collidepoint(event.pos):
                     reset_simulation()
         
-        # Update game state
+        # Update state game
         if RUNNING:
             update_courier()
         
