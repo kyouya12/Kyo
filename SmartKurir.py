@@ -34,7 +34,7 @@ MOVEMENT_SPEED = 5  # jalan per pixel
 RUNNING = False
 FINISHED = False
 
-# gambar kurir (Bentuk segitiga SAMA KAKI)
+# gambar kurir (Bentuk segitiga sama kaki)
 COURIER_IMGS = []
 for i in range(8):  # 0: right, 1: down, 2: left, 3: up
     img = pygame.Surface((60, 20), pygame.SRCALPHA) 
