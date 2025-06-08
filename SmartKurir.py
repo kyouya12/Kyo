@@ -93,16 +93,16 @@ RED_FLAG = pygame.Surface(FLAG_SIZE, pygame.SRCALPHA)
 pygame.draw.rect(RED_FLAG, RED, (0, 0, 5, 20))
 pygame.draw.polygon(RED_FLAG, RED, [(5, 0), (20, 5), (5, 10)])
 
-# inisialisasi layar
+# inisialisasi pada layar
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Game smart kurir")
 
-# font tampilan
+# font tampilan layar
 font = pygame.font.SysFont('Arial', 24)
 
 # element tampilan
 button_width, button_height = 180, 40 #lebar tombol dan tinggi
-button_spacing = 60 #jarak antar tombol
+button_spacing = 60 #jarak antar tombol pada layar
 button_y = 10 # jarak 10 piksel dari atas layar.
 
 # posisi tombol
