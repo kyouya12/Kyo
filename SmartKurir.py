@@ -16,7 +16,7 @@ RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 YELLOW = (255, 255, 0)
-GRAY = (120, 120, 120)  # warna jalan
+GRAY = (120, 120, 120)  # warna pada jalan
 BIRU_M = (75, 200, 226)
 
 # status game
