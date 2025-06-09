@@ -79,10 +79,10 @@ To run this simulator, ensure you have Python and the necessary libraries instal
 
 ## Development Team
 
-* Mhd Febri Yansah (2301020104)
-* Syawal Rizal Utama (2301020008)
-* Azmi Novi Athaya (2301020001)
-* Ezzy Auriel Syach Lie (2301020011)
+* Mhd Febri Yansah (2301020104).
+* Syawal Rizal Utama (2301020008).
+* Azmi Novi Athaya (2301020001).
+* Ezzy Auriel Syach Lie (2301020011).
 
 ## Future Enhancements (Optional)
 
